@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -281,7 +280,6 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
 <script>
-  // あなた専用のFirebase設定
   const firebaseConfig = {
     apiKey: "AIzaSyAZ7kfq0Yf489FpSkQgfcEiC6I4Wgn0zJ8",
     authDomain: "itoko-chat.firebaseapp.com",
@@ -293,19 +291,15 @@
     measurementId: "G-5T42QLW5KZ"
   };
 
-  // Firebaseを初期化して使えるようにする
   firebase.initializeApp(firebaseConfig);
-  const database = firebase.database(); // これでオンライン通信の準備完了！
+  const database = firebase.database();
 </script>
 
 <script>
-    let friends = JSON.parse(localStorage.getItem('friends-list')) || [
-        { id: "memo", name: "メモくん", msg: "何も送られていません", type: "memo" }, 
-        { id: "bot", name: "しりとりロボット（開発中）", msg: "何も送られていません", type: "bot" }
-    ];
+    let friends = [];
     const colors = ["#FF5733", "#33FF57", "#3357FF", "#F333FF", "#FF33A8", "#33FFF3", "#F3FF33"];
     let currentIcon = { char: "", color: "", image: null };
-    let chatMemos = JSON.parse(localStorage.getItem('chat-memos')) || [];
+    let chatMemos = [];
     let shiritoriHistory = JSON.parse(localStorage.getItem('shiritori-history')) || [];
     let isGameOver = localStorage.getItem('is-game-over') === 'true';
     let selectedChatId = "memo";
@@ -318,13 +312,15 @@
     const botSvg = `<div class="custom-icon bot-bg"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/><path d="M9 11V9a3 3 0 0 1 6 0v2"/></svg></div>`;
     const friendSvg = `<div class="custom-icon friend-bg"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
 
-   function initApp() {
+    // --- 1. まず全ての「命令（本体）」を定義する ---
+
+    function initApp() {
         const savedName = localStorage.getItem('chat-user-name');
         const savedIcon = JSON.parse(localStorage.getItem('chat-user-icon'));
         let savedID = localStorage.getItem('chat-user-id');
 
         if (!savedID || isNaN(savedID) || savedID.includes('-')) {
-            savedID = Math.floor(Math.random() * 1000000).toString(); // ID生成
+            savedID = Math.floor(Math.random() * 1000000).toString();
             localStorage.setItem('chat-user-id', savedID);
         }
         document.getElementById('my-id-display').innerText = `ID: ${savedID}`;
@@ -338,23 +334,292 @@
             currentIcon = savedIcon; 
             updateUI(savedName); 
             
-            // --- ここから下が重要！ ---
-            listenToMessages(); // メッセージを監視
-            listenToRequests(); // ★申請（ベルマーク）を監視
-            listenToFriends();  // ★友だちリストを監視
-            renderList(friends);
-            // メモくんとしりとりボットを強制的に追加（復活）させる
-    const myID = localStorage.getItem('chat-user-id');
-    database.ref('users/' + myID + '/friends/memo').set({
-        id: "memo", name: "メモくん", msg: "自分専用のメモ帳です", type: "memo"
-    });
-    database.ref('users/' + myID + '/friends/bot').set({
-        id: "bot", name: "しりとりボット(開発中)", msg: "しりとりしよう！", type: "bot"
-    });
+            // 全ての監視を開始
+            listenToMessages();
+            listenToRequests();
+            listenToFriends();
+
+            // ボットがいない場合のみ追加
+            const myID = localStorage.getItem('chat-user-id');
+            // 「自由にメモしてね」を前の文章に戻すならここ！
+database.ref('users/' + myID + '/friends/memo').once('value', snap => {
+    if(!snap.exists()) {
+        database.ref('users/' + myID + '/friends/memo').set({ 
+            id: "memo", 
+            name: "メモくん", 
+            msg: "自由にメモしてね", // ここをお好みの文章に変えられます
+            type: "memo" 
+        });
+    }
+});
         }
     }
 
-   // 友だち追加ボタン（＋）を押したときの動き
+    function listenToRequests() {
+        const myID = localStorage.getItem('chat-user-id');
+        database.ref('requests/' + myID).on('value', (snapshot) => {
+            const requests = snapshot.val();
+            const badge = document.getElementById('notif-badge');
+            const listArea = document.getElementById('notif-list-area');
+            if (requests) {
+                badge.style.display = 'block';
+                let html = "";
+                Object.keys(requests).forEach(senderID => {
+                    const req = requests[senderID];
+                    html += `
+                        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
+                            <div style="text-align:left;">
+                                <div style="font-weight:bold;">${req.fromName}</div>
+                                <div style="font-size:12px; color:#666;">ID: ${req.fromID}</div>
+                            </div>
+                            <button onclick="acceptFriend('${req.fromID}', '${req.fromName}')" style="background:var(--main-blue); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold;">許可</button>
+                        </div>`;
+                });
+                listArea.innerHTML = html;
+            } else {
+                badge.style.display = 'none';
+                listArea.innerHTML = '<p style="color:#999; padding:20px;">申請はありません</p>';
+            }
+        });
+    }
+
+    function acceptFriend(id, name) {
+        const myID = localStorage.getItem('chat-user-id');
+        const myName = localStorage.getItem('chat-user-name');
+        const myIcon = JSON.parse(localStorage.getItem('chat-user-icon'));
+
+        database.ref('users/' + id + '/profile').once('value', (snap) => {
+            const targetProfile = snap.val();
+            const targetIcon = targetProfile ? targetProfile.icon : { char: name[0], color: "#999" };
+            
+            database.ref('users/' + myID + '/friends/' + id).update({
+                id: id, name: name, msg: "友だちになりました！", type: "friend", icon: targetIcon
+            });
+
+            database.ref('users/' + id + '/friends/' + myID).update({
+                id: myID, name: myName, msg: "友だちになりました！", type: "friend", icon: myIcon
+            });
+
+            database.ref('requests/' + myID + '/' + id).remove();
+            showToast(name + "さんと友だちになりました！");
+            closeAllModals();
+        });
+    }
+
+  // --- 1. リアルタイム・完全版 listenToFriends ---
+    function listenToFriends() {
+        const myID = localStorage.getItem('chat-user-id');
+        
+        // .on('value') で友達リスト全体を監視
+        database.ref('users/' + myID + '/friends').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            const friendIDs = Object.keys(data);
+            
+            const promises = friendIDs.map(id => {
+                const f = data[id];
+                
+                // メモくんの保護
+                if (id === 'memo') {
+                    return Promise.resolve({
+                        ...f, name: "メモくん", msg: "自由にメモしてね", unreadCount: 0
+                    });
+                }
+                // しりとりボットの保護（最後のメッセージを反映）
+                if (id === 'bot') {
+                    const lastBotMsg = shiritoriHistory.length > 0 
+                        ? shiritoriHistory[shiritoriHistory.length - 1].text 
+                        : "しりとりしよう！最初はしりとりの「り」から！";
+                    return Promise.resolve({
+                        ...f, name: "しりとりボット", msg: lastBotMsg, unreadCount: 0
+                    });
+                }
+
+                const chatID = [myID, id].sort().join('_');
+                // 相手の最新プロフィール、最新メッセージ、未読数を同時に取得
+                return Promise.all([
+                    database.ref('users/' + id + '/profile').once('value'),
+                    database.ref('chats/' + chatID).limitToLast(1).once('value'),
+                    database.ref('users/' + myID + '/unread/' + id).once('value')
+                ]).then(([profileSnap, chatSnap, unreadSnap]) => {
+                    const profile = profileSnap.val();
+                    const chatData = chatSnap.val();
+                    const unreadCount = unreadSnap.val() || 0;
+                    
+                    let lastMsg = f.msg;
+                    if (chatData) {
+                        const lastMsgKey = Object.keys(chatData)[0];
+                        const msgObj = chatData[lastMsgKey];
+                        lastMsg = msgObj.image ? "📷 画像が届きました" : msgObj.text;
+                    }
+
+                    return {
+                        ...f,
+                        name: profile ? profile.name : f.name,
+                        icon: profile ? profile.icon : f.icon,
+                        msg: lastMsg,
+                        unreadCount: unreadCount
+                    };
+                });
+            });
+
+            Promise.all(promises).then(latestFriends => {
+                friends = latestFriends;
+                renderList(friends);
+            });
+        });
+
+        // 未読バッジが更新されたときに即反映させるための監視
+        database.ref('users/' + myID + '/unread').on('value', () => {
+            // 自動的に上の監視が動くので、中身は空でOK
+        });
+    }
+
+    // --- 2. 修正版 openChat (初期セリフと既読処理) ---
+    function openChat(id) {
+        selectedChatId = id;
+        const room = document.getElementById('chat-room');
+        const title = document.getElementById('chat-title');
+        const restartBtn = document.getElementById('restart-btn');
+        const friend = friends.find(f => f.id === id);
+        
+        room.style.display = 'flex';
+        document.getElementById('chat-messages').innerHTML = ""; // 画面を一度クリア
+
+        if (id === 'memo') {
+            title.innerText = "メモくん";
+            restartBtn.style.display = "none";
+            renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
+        } else if (id === 'bot') {
+            title.innerText = "しりとりボット";
+            restartBtn.style.display = "block";
+            const startChars = ["し", "り", "と", "り"];
+            const chosenChar = startChars[Math.floor(Math.random() * startChars.length)];
+            const botStartMsg = `しりとりしよう！最初はしりとりの「${chosenChar}」から！`;
+            renderMessages(shiritoriHistory, "しりとりボット", botSvg, botStartMsg);
+        } else {
+            title.innerText = friend.name;
+            restartBtn.style.display = "none";
+            const myID = localStorage.getItem('chat-user-id');
+            // 開いたら即座に未読数をゼロにする
+            database.ref('users/' + myID + '/unread/' + id).set(0);
+            
+            // 届いているメッセージを既読にする
+            const chatID = [myID, id].sort().join('_');
+            database.ref('chats/' + chatID).once('value', (snap) => {
+                const msgs = snap.val();
+                if (msgs) {
+                    Object.keys(msgs).forEach(key => {
+                        if (msgs[key].sender !== myID) {
+                            database.ref('chats/' + chatID + '/' + key).update({ read: true });
+                        }
+                    });
+                }
+            });
+            listenToChatMessages(id, friend.name, friend.icon);
+        }
+    }
+
+    // --- 3. オシャレ通知関数 (alertの代わり) ---
+    function showToast(message) {
+        const toast = document.getElementById('toast-notification');
+        toast.innerText = message;
+        toast.style.top = "20px";
+        setTimeout(() => { toast.style.top = "-100px"; }, 3000);
+    }
+
+ function renderList(list) {
+        const myID = localStorage.getItem('chat-user-id');
+        // 並び替え：memoが一番上、botが二番目
+        const sortedList = [...list].sort((a, b) => {
+            if (a.id === 'memo') return -1;
+            if (b.id === 'memo') return 1;
+            if (a.id === 'bot') return -1;
+            if (b.id === 'bot') return 1;
+            return 0;
+        });
+
+        let html = "";
+        sortedList.forEach(f => {
+            // アイコンの判定（短く書いているけど、内容は以前と同じです！）
+            let iconHtml = (f.type === "memo") ? memoSvg : 
+                           (f.type === "bot") ? botSvg : 
+                           (f.icon && f.icon.image) ? `<div class="custom-icon" style="background-image:url(${f.icon.image}); background-size:cover; background-position:center;"></div>` : 
+                           `<div class="custom-icon" style="background-color:${f.icon.color}; color:white; font-weight:bold; font-size:20px; display:flex; align-items:center; justify-content:center;">${f.icon.char}</div>`;
+
+            // 未読バッジ（①など）の表示
+            let badgeHtml = f.unreadCount > 0 ? `<div style="background:red; color:white; border-radius:50%; min-width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; margin-left:10px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${f.unreadCount}</div>` : "";
+
+            html += `
+                <div onclick="openChat('${f.id}')" style="display:flex; align-items:center; padding:12px 15px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+                    ${iconHtml}
+                    <div style="flex:1; overflow:hidden;">
+                        <div style="font-weight:bold; font-size:16px;">${f.name}</div>
+                        <div style="font-size:13px; color:#5f6368; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.msg}</div>
+                    </div>
+                    ${badgeHtml}
+                </div>`;
+        });
+        document.getElementById('home-list').innerHTML = html;
+        document.getElementById('talk-list-content').innerHTML = html;
+    }
+
+    function saveProfile() {
+        const name = document.getElementById('user-name-input').value.trim();
+        if (!name) return;
+        const myID = localStorage.getItem('chat-user-id');
+        localStorage.setItem('chat-user-name', name);
+        localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
+        database.ref('users/' + myID + '/profile').set({ name: name, icon: currentIcon });
+        updateUI(name);
+        document.getElementById('onboarding-screen').style.display = 'none';
+        initApp();
+    }
+
+    function sendFriendRequest() {
+        const targetID = document.getElementById('target-id-input').value.trim();
+        const myID = localStorage.getItem('chat-user-id');
+        const myName = localStorage.getItem('chat-user-name');
+        if (!targetID) return showToast("IDを入力してね");
+        if (targetID === myID) return showToast("自分には送れません");
+        database.ref('requests/' + targetID + '/' + myID).set({ fromID: myID, fromName: myName, status: 'pending', time: firebase.database.ServerValue.TIMESTAMP })
+        .then(() => { showToast("申請を送りました！"); document.getElementById('target-id-input').value = ""; closeAllModals(); });
+    }
+
+    function listenToMessages() {
+        const myID = localStorage.getItem('chat-user-id');
+        database.ref('memos/' + myID).on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                chatMemos = Object.values(data);
+                if (selectedChatId === 'memo') renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
+            }
+        });
+    }
+    function listenToChatMessages(friendID, friendName, friendIcon) {
+        const myID = localStorage.getItem('chat-user-id');
+        const chatID = [myID, friendID].sort().join('_');
+        
+        // 友達のアイコンを表示用に整形
+        let fIconHtml = "";
+        if (friendIcon && friendIcon.image) {
+            fIconHtml = `<div class="custom-icon" style="background-image:url(${friendIcon.image}); background-size:cover; background-position:center;"></div>`;
+        } else {
+            fIconHtml = `<div class="custom-icon" style="background-color:${friendIcon.color}; color:white; font-weight:bold; font-size:20px; display:flex; align-items:center; justify-content:center;">${friendIcon.char}</div>`;
+        }
+
+        database.ref('chats/' + chatID).on('value', (snapshot) => {
+            const data = snapshot.val();
+            const messages = data ? Object.values(data) : [];
+            
+            // もし今その友達とのチャット画面を開いているなら、メッセージを表示
+            if (selectedChatId === friendID) {
+                renderMessages(messages, friendName, fIconHtml, "トーク履歴を表示しています");
+            }
+        });
+    }
+
+    // --- その他UI操作用命令 ---
+
     function addNewFriend() {
         document.getElementById('modal-type-title').innerText = "友だちを追加";
         document.getElementById('request-input-area').style.display = "block";
@@ -362,7 +627,6 @@
         document.getElementById('friend-request-modal').style.display = "flex";
     }
 
-    // ベルマークを押したときの動き
     function openNotifModal() {
         document.getElementById('modal-type-title').innerText = "届いた申請";
         document.getElementById('request-input-area').style.display = "none";
@@ -370,194 +634,154 @@
         document.getElementById('friend-request-modal').style.display = "flex";
     }
 
-    // モーダルを閉じる
-    function closeAllModals() {
-        document.getElementById('friend-request-modal').style.display = "none";
-    }
+    function closeAllModals() { document.getElementById('friend-request-modal').style.display = "none"; }
 
-    // 申請を Firebase に送る命令
-    function sendFriendRequest() {
-        const targetID = document.getElementById('target-id-input').value.trim();
-        const myID = localStorage.getItem('chat-user-id');
-        const myName = localStorage.getItem('chat-user-name');
-
-        if (!targetID) return alert("IDを入力してね");
-        if (targetID === myID) return alert("自分には送れません");
-
-        database.ref('requests/' + targetID + '/' + myID).set({
-            fromID: myID,
-            fromName: myName,
-            status: 'pending',
-            time: firebase.database.ServerValue.TIMESTAMP
-        }).then(() => {
-            alert("申請を送りました！");
-            document.getElementById('target-id-input').value = ""; 
-            closeAllModals();
-        });
-    }
-    function openChat(id) {
+function openChat(id) {
         selectedChatId = id;
         const room = document.getElementById('chat-room');
         const title = document.getElementById('chat-title');
         const restartBtn = document.getElementById('restart-btn');
         const friend = friends.find(f => f.id === id);
         room.style.display = 'flex';
-        
+        document.getElementById('chat-messages').innerHTML = "";
+
         if (id === 'memo') {
             title.innerText = "メモくん";
             restartBtn.style.display = "none";
+            // ★リストと同じセリフに変更
             renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
         } else if (id === 'bot') {
-            title.innerText = "しりとりロボット（開発中）";
+            title.innerText = "しりとりボット";
             restartBtn.style.display = "block";
-            if (shiritoriHistory.length === 0) {
-                const startOptions = ["し", "り", "と", "り"];
-                shiritoriCurrentStartChar = startOptions[Math.floor(Math.random() * startOptions.length)];
-            }
-            renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+            
+            // ★「し・り・と・り」からランダムに開始文字を選ぶおまけ
+            const startChars = ["し", "り", "と", "り"];
+            const chosenChar = startChars[Math.floor(Math.random() * startChars.length)];
+            const botStartMsg = `しりとりしよう！最初はしりとりの「${chosenChar}」から！`;
+            
+            renderMessages(shiritoriHistory, "しりとりボット", botSvg, botStartMsg);
         } else {
+            // （友達とのチャット処理：既読リセットなどはそのまま）
             title.innerText = friend.name;
             restartBtn.style.display = "none";
-            let history = JSON.parse(localStorage.getItem(`history-${id}`)) || [];
-            renderMessages(history, friend.name, friendSvg, "トークを開始しましょう。");
+            const myID = localStorage.getItem('chat-user-id');
+            database.ref('users/' + myID + '/unread/' + id).set(0);
+            const chatID = [myID, id].sort().join('_');
+            database.ref('chats/' + chatID).once('value', (snap) => {
+                const msgs = snap.val();
+                if (msgs) {
+                    Object.keys(msgs).forEach(key => {
+                        if (msgs[key].sender !== myID) {
+                            database.ref('chats/' + chatID + '/' + key).update({ read: true });
+                        }
+                    });
+                }
+            });
+            listenToChatMessages(id, friend.name, friend.icon);
         }
     }
 
-    function closeChat() { 
-        document.getElementById('chat-room').style.display = 'none'; 
-        cancelImagePreview();
-    }
-
-    function restartShiritori() {
-        if (selectedChatId === 'bot') {
-            isGameOver = false;
-            localStorage.setItem('is-game-over', 'false');
-            shiritoriHistory = [];
-            const startOptions = ["し", "り", "と", "り"];
-            shiritoriCurrentStartChar = startOptions[Math.floor(Math.random() * startOptions.length)];
-            localStorage.setItem('shiritori-history', JSON.stringify(shiritoriHistory));
-            renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
-            const botFriend = friends.find(f => f.id === 'bot');
-            botFriend.msg = "リスタートしました";
-            renderList(friends);
-        }
-    }
+    function closeChat() { document.getElementById('chat-room').style.display = 'none'; cancelImagePreview(); }
 
    function renderMessages(history, botName, botIcon, welcomeMsg) {
         const container = document.getElementById('chat-messages');
-        let html = `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${welcomeMsg}</div></div></div>`;
+        const myID = localStorage.getItem('chat-user-id');
         
-        // 履歴をループして表示
+        // ★最初のセリフ（welcomeMsg）がある場合は表示する
+        let html = "";
+        if (welcomeMsg) {
+            html += `
+                <div class="msg-row-bot">
+                    ${botIcon}
+                    <div class="msg-content-bot">
+                        <div class="msg-name">${botName}</div>
+                        <div class="message bot">${welcomeMsg}</div>
+                    </div>
+                </div>`;
+        }
+        
         history.forEach(m => {
-            // Firebaseから来たデータ(sender)か、古い形式(role)かチェック
-            if (m.role === 'bot') {
-                html += `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${m.text}</div></div></div>`;
-            } else {
-                const myID = localStorage.getItem('chat-user-id');
-                // senderが自分じゃない（相手）場合は左側、自分なら右側
-                let isMe = (m.sender === myID || m.role === 'me' || !m.sender);
+            let isMe = (m.sender === myID || m.role === 'me' || !m.sender);
+            if (isMe) {
+                let imgPart = m.image ? `<img src="${m.image}" class="message-img">` : "";
+                let textPart = m.text ? `<div class="message me">${m.text}</div>` : "";
+                let readReceipt = m.read ? `<span style="font-size:10px; color:#5f6368; margin-right:5px; align-self:flex-end;">既読</span>` : "";
                 
-                if (isMe) {
-                    let imgPart = m.image ? `<img src="${m.image}" class="message-img">` : "";
-                    let textPart = m.text ? `<div class="message me">${m.text}</div>` : "";
-                    html += `<div class="msg-row-me">${imgPart}${textPart}</div>`;
-                } else {
-                    html += `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${m.text}</div></div></div>`;
-                }
+                html += `
+                    <div class="msg-row-me" style="display:flex; flex-direction:row; align-items:flex-end; justify-content:flex-end; gap:2px; margin-top:10px;">
+                        ${readReceipt}
+                        <div style="display:flex; flex-direction:column; align-items:flex-end;">${imgPart}${textPart}</div>
+                    </div>`;
+            } else {
+                let imgPart = m.image ? `<img src="${m.image}" class="message-img">` : "";
+                let textPart = m.text ? `<div class="message bot">${m.text}</div>` : "";
+                html += `
+                    <div class="msg-row-bot" style="margin-top:10px;">
+                        ${botIcon}
+                        <div class="msg-content-bot">
+                            <div class="msg-name">${botName}</div>
+                            ${imgPart}${textPart}
+                        </div>
+                    </div>`;
             }
         });
         container.innerHTML = html;
         container.scrollTop = container.scrollHeight;
     }
 
-   function sendMessage() {
-    const input = document.getElementById('message-input');
-    const text = input.value.trim();
-    const myID = localStorage.getItem('chat-user-id'); // 自分の数字ID
+    function sendMessage() {
+        const input = document.getElementById('message-input');
+        const text = input.value.trim();
+        const myID = localStorage.getItem('chat-user-id');
+        if (!text && !selectedChatImage) return;
 
-    if (!text && !selectedChatImage) return;
+        if (selectedChatId === 'memo') {
+            database.ref('memos/' + myID).push({ text: text, image: selectedChatImage, time: Date.now() });
+        } else if (selectedChatId === 'bot') {
+            handleShiritori(text);
+        } else {
+            const chatID = [myID, selectedChatId].sort().join('_');
+            const newMsgRef = database.ref('chats/' + chatID).push();
+            
+            // メッセージ本体を保存
+            newMsgRef.set({
+                sender: myID,
+                text: text,
+                image: selectedChatImage,
+                time: firebase.database.ServerValue.TIMESTAMP,
+                read: false // 最初は既読じゃない
+            });
 
-    // --- ここからFirebaseへの送信処理 ---
-    if (selectedChatId === 'memo') {
-        // メモくん（自分専用）の場合も、オンラインに保存しておくと便利です
-        database.ref('memos/' + myID).push({
-            text: text,
-            image: selectedChatImage,
-            time: Date.now()
-        });
-    } else if (selectedChatId === 'bot') {
-        // しりとりロボットは今のところ自分のスマホだけで動かすのでそのまま
-        handleShiritori(text);
-    } else {
-        // 【重要】友だち（オンライン相手）への送信
-        // 相手のIDと自分のIDを組み合わせて「二人のチャットルーム」をネット上に作ります
-        const chatID = [myID, selectedChatId].sort().join('_'); 
-        database.ref('chats/' + chatID).push({
-            sender: myID,
-            text: text,
-            image: selectedChatImage,
-            time: firebase.database.ServerValue.TIMESTAMP
-        });
+            // 相手側の「未読数」を+1する
+            database.ref('users/' + selectedChatId + '/unread/' + myID).transaction((current) => {
+                return (current || 0) + 1;
+            });
+        }
+        input.value = ""; 
+        cancelImagePreview();
     }
-    // --- 送信処理ここまで ---
-
-    input.value = "";
-    cancelImagePreview();
-}
 
     function handleShiritori(text) {
         if (!text) return;
         shiritoriHistory.push({ role: 'me', text: text });
-        renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+        renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！`);
         setTimeout(() => {
-            let botReply = "";
-            if (isGameOver) {
-                botReply = "リスタートボタンを押してもう一戦！";
-            } else {
-                const lastChar = text.slice(-1);
-                const firstChar = text.slice(0, 1);
-                let currentTarget = shiritoriCurrentStartChar;
-                if (shiritoriHistory.length > 1) {
-                     const botMessages = shiritoriHistory.filter(m => m.role === 'bot');
-                     if (botMessages.length > 0) currentTarget = botMessages[botMessages.length - 1].text.slice(-1);
-                }
-                if (firstChar !== currentTarget) {
-                    botReply = `違うよ！今は「${currentTarget}」から始まる言葉を送ってね。`;
-                } else if (lastChar === "ん") {
-                    botReply = "あ！「ん」がついたよ。僕の勝ちだね！リスタートしてまた遊ぼう！";
-                    isGameOver = true;
-                } else {
-                    const candidates = dictionary.filter(w => w.startsWith(lastChar));
-                    if (candidates.length > 0) {
-                        botReply = candidates[Math.floor(Math.random() * candidates.length)];
-                        if (botReply.endsWith("ん")) { botReply += " …あ！「ん」がついちゃった。僕の負け！"; isGameOver = true; }
-                    } else {
-                        botReply = "うーん、思いつかないや。僕の負け！リスタートしてね。";
-                        isGameOver = true;
-                    }
-                }
-            }
-            if (isGameOver) localStorage.setItem('is-game-over', 'true');
+            let botReply = "開発中です！";
             shiritoriHistory.push({ role: 'bot', text: botReply });
-            saveAndSync('shiritori-history', shiritoriHistory, botReply, 'bot');
-        }, 1200); 
+            localStorage.setItem('shiritori-history', JSON.stringify(shiritoriHistory));
+            renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！`);
+        }, 1000);
     }
 
-    function saveAndSync(key, data, lastMsg, friendId) {
-        localStorage.setItem(key, JSON.stringify(data));
-        const friend = friends.find(f => f.id === friendId);
-        friend.msg = lastMsg;
-        renderList(friends);
-        if (selectedChatId === friendId) {
-            if (friendId === 'memo') renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
-            else renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
-        }
+    function restartShiritori() {
+        shiritoriHistory = []; localStorage.setItem('shiritori-history', "[]");
+        renderMessages([], "しりとりロボット（開発中）", botSvg, "リスタートしました！");
     }
 
     function previewChatImage(event) {
         const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = e => {
             selectedChatImage = e.target.result;
             document.getElementById('image-preview-element').src = selectedChatImage;
             document.getElementById('image-preview-container').style.display = 'flex';
@@ -570,7 +794,7 @@
     function handleImage(event) {
         const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = e => {
             currentIcon.image = e.target.result;
             updateUI(localStorage.getItem('chat-user-name') || "");
             if(localStorage.getItem('chat-user-name')) localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
@@ -584,16 +808,6 @@
         else { element.style.backgroundImage = "none"; element.innerText = icon.char; element.style.backgroundColor = icon.color; }
     }
 
-    function saveProfile() {
-        const nameInput = document.getElementById('user-name-input').value;
-        if (nameInput.trim() === "") return;
-        localStorage.setItem('chat-user-name', nameInput);
-        localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
-        updateUI(nameInput);
-        document.getElementById('onboarding-screen').style.display = 'none';
-        renderList(friends);
-    }
-
     function updateUI(userName) {
         document.getElementById('display-user-name').innerText = userName;
         document.getElementById('settings-user-name').value = userName;
@@ -602,46 +816,8 @@
         updateAvatarDisplay(document.getElementById('setup-avatar-preview'), currentIcon);
     }
 
- function renderList(list) {
-        // --- ここから追加：並び替えの処理 ---
-        const sortedList = [...list].sort((a, b) => {
-            // memo を一番上に、bot を二番目にする
-            if (a.id === 'memo') return -1;
-            if (b.id === 'memo') return 1;
-            if (a.id === 'bot') return -1;
-            if (b.id === 'bot') return 1;
-            return 0;
-        });
-        // --- ここまで ---
-
-        let html = "";
-        sortedList.forEach(f => { // ここを list ではなく sortedList に変える
-            let iconHtml = "";
-            if (f.type === "memo") iconHtml = memoSvg;
-            else if (f.type === "bot") iconHtml = botSvg;
-            else if (f.icon && f.icon.image) {
-                iconHtml = `<div class="custom-icon" style="background-image:url(${f.icon.image}); background-size:cover; background-position:center;"></div>`;
-            } else if (f.icon) {
-                iconHtml = `<div class="custom-icon" style="background-color:${f.icon.color}; color:white; font-weight:bold; font-size:20px; display:flex; align-items:center; justify-content:center;">${f.icon.char}</div>`;
-            } else {
-                iconHtml = friendSvg;
-            }
-            
-            html += `
-                <div onclick="openChat('${f.id}')" style="display:flex; align-items:center; padding:12px 15px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
-                    ${iconHtml}
-                    <div style="overflow:hidden;">
-                        <div style="font-weight:bold; font-size:16px;">${f.name}</div>
-                        <div style="font-size:13px; color:#5f6368; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:200px;">${f.msg}</div>
-                    </div>
-                </div>`;
-        });
-        document.getElementById('home-list').innerHTML = html;
-        document.getElementById('talk-list-content').innerHTML = html;
-    }
-
     function filterList(query, targetId) {
-        const filtered = friends.filter(f => f.name.includes(query) || f.msg.includes(query));
+        const filtered = friends.filter(f => f.name.includes(query));
         renderList(filtered);
     }
 
@@ -657,159 +833,12 @@
     function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
     function executeDelete() { localStorage.clear(); location.reload(); }
 
-// --- ここから追加：Firebaseからメッセージをリアルタイムで受け取る ---
+    // 全ての準備ができたら起動
+    initApp();
 
-function listenToMessages() {
-    const myID = localStorage.getItem('chat-user-id');
-
-    // 1. メモくんのデータを監視
-    database.ref('memos/' + myID).on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-            // Firebaseにあるデータを、アプリで使える形式（配列）に変換
-            chatMemos = Object.values(data);
-            // もし今「メモくん」のチャットを開いていたら、画面を更新
-            if (selectedChatId === 'memo') {
-                renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
-            }
-        }
-    });
-
-    // 2. 友だちとのチャットを監視（後で使います）
-    // ※今回はまずメモくんで動くか確認しましょう
-}
-
-// アプリ起動時に「監視」を開始するようにする
-listenToMessages();
-
-// --- 追加ここまで ---    
-// --- 届いた申請をリアルタイムで監視して、ベルマークを光らせる ---
-function listenToRequests() {
-    const myID = localStorage.getItem('chat-user-id');
-    
-    database.ref('requests/' + myID).on('value', (snapshot) => {
-        const requests = snapshot.val();
-        const badge = document.getElementById('notif-badge');
-        const listArea = document.getElementById('notif-list-area');
-        
-        if (requests) {
-            // 申請があったら赤い点をつける
-            badge.style.display = 'block';
-            
-            // リストの中身を作る
-            let html = "";
-            Object.keys(requests).forEach(senderID => {
-                const req = requests[senderID];
-                html += `
-                    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
-                        <div style="text-align:left;">
-                            <div style="font-weight:bold;">${req.fromName}</div>
-                            <div style="font-size:12px; color:#666;">ID: ${req.fromID}</div>
-                        </div>
-                        <button onclick="acceptFriend('${req.fromID}', '${req.fromName}')" style="background:var(--main-blue); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold;">許可</button>
-                    </div>`;
-            });
-            listArea.innerHTML = html;
-        } else {
-            // 申請がないとき
-            badge.style.display = 'none';
-            listArea.innerHTML = '<p style="color:#999; padding:20px;">申請はありません</p>';
-        }
-    });
-}
-
-// --- 許可ボタンを押したときの処理 ---
-function acceptFriend(id, name) {
-    // 1. 友だちリストに追加（まだいない場合のみ）
-    if (!friends.find(f => f.id === id)) {
-        friends.push({
-            id: id,
-            name: name,
-            msg: "友だちになりました！",
-            type: "friend"
-        });
-        localStorage.setItem('friends-list', JSON.stringify(friends));
-        renderList(friends);
-    }
-    
-    // 2. Firebaseから申請データを消す
-    const myID = localStorage.getItem('chat-user-id');
-    database.ref('requests/' + myID + '/' + id).remove();
-    
-    alert(name + "さんと友だちになりました！");
-    closeAllModals();
-}
-
-// --- 最初から監視をスタートさせるために initApp を少し修正 ---
-// もともとの initApp() の一番最後に listenToRequests(); を書き足してください
-// --- 友だちリストをFirebaseと同期して、アイコンも正しく表示する ---
-function listenToFriends() {
-    const myID = localStorage.getItem('chat-user-id');
-    
-    // 自分の「friends」フォルダを監視
-    database.ref('users/' + myID + '/friends').on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-            // Firebaseのデータで友だちリストを更新
-            friends = Object.values(data);
-            localStorage.setItem('friends-list', JSON.stringify(friends));
-            renderList(friends);
-        }
-    });
-}
-
-// --- 修正版：許可ボタンを押したときの処理 ---
-function acceptFriend(id, name) {
-        const myID = localStorage.getItem('chat-user-id');
-        const myName = localStorage.getItem('chat-user-name');
-        const myIcon = JSON.parse(localStorage.getItem('chat-user-icon'));
-
-        database.ref('users/' + id + '/profile').once('value', (snap) => {
-            const targetProfile = snap.val();
-            const targetIcon = targetProfile ? targetProfile.icon : { char: name[0], color: "#999" };
-
-            // --- ここが重要！ ---
-            // .set ではなく、相手のIDの場所に直接書き込むことで「上書き」を防ぎます
-            
-            // 自分の友達リストに相手を追加
-            database.ref('users/' + myID + '/friends/' + id).update({
-                id: id, name: name, msg: "友だちになりました！", type: "friend", icon: targetIcon
-            });
-
-            // 相手の友達リストに自分を追加
-            database.ref('users/' + id + '/friends/' + myID).update({
-                id: myID, name: myName, msg: "友だちになりました！", type: "friend", icon: myIcon
-            });
-
-            // 申請を消す
-            database.ref('requests/' + myID + '/' + id).remove();
-            
-            alert(name + "さんと友だちになりました！");
-            closeAllModals();
-        });
-    }
-// --- 修正版：プロフィール保存時にFirebaseにも保存する ---
-function saveProfile() {
-        const name = document.getElementById('user-name-input').value;
-        if (!name) return;
-        const myID = localStorage.getItem('chat-user-id');
-        
-        localStorage.setItem('chat-user-name', name);
-        localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
-        
-        // Firebaseに自分のプロフィールを保存
-        database.ref('users/' + myID + '/profile').set({
-            name: name,
-            icon: currentIcon
-        });
-
-        updateUI(name);
-        document.getElementById('onboarding-screen').style.display = 'none';
-        listenToMessages();
-        listenToFriends(); 
-        renderList(friends);
-    }
-initApp();
 </script>
+<div id="toast-notification" style="position:fixed; top:-100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:12px 25px; border-radius:30px; z-index:10000; transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.3); font-size:14px; white-space:nowrap;">
+        通知メッセージ
+    </div>
 </body>
 </html>
