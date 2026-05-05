@@ -1,0 +1,815 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>いとこチャット PWA</title>
+    <style>
+        :root {
+            --bg-gray: #f0f2f5;
+            --active-green: #00ff7f;
+            --main-blue: #1a73e8;
+            --danger-red: #d93025;
+            --search-bg: #f1f3f4;
+            --chat-bg: #e2e7e7;
+            --my-bubble: #5dfd63;
+            --header-blue: #4a9ede;
+        }
+
+        body { margin: 0; font-family: "Google Sans", Roboto, Arial, sans-serif; background: white; overflow: hidden; touch-action: manipulation; }
+
+        .viewport { width: 100vw; height: 100vh; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+        .page-container { display: flex; width: 300vw; height: calc(100vh - 70px); transition: transform 0.3s ease-out; flex: 1; }
+        .page { width: 100vw; height: 100%; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; background: white; }
+
+        /* ヘッダー */
+        .header { background: black; color: white; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; min-height: 40px; flex-shrink: 0; z-index: 10; }
+        .header-title { font-size: 24px; font-weight: bold; border: 2px solid white; border-radius: 8px; padding: 2px 15px; }
+        .header-plus { font-size: 28px; font-weight: bold; cursor: pointer; padding-right: 5px; }
+
+        /* 初期設定画面 */
+        #onboarding-screen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: var(--bg-gray); z-index: 2000; display: none; flex-direction: column;
+        }
+        .setup-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; position: relative; overflow: hidden; }
+        .svg-deco { position: absolute; width: 80px; height: 80px; opacity: 0.1; z-index: 0; pointer-events: none; }
+        .setup-card {
+            background: white; width: 90%; max-width: 400px; padding: 40px 20px;
+            border-radius: 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: flex; flex-direction: column; align-items: center; z-index: 1;
+        }
+        .setup-avatar { width: 100px; height: 100px; border-radius: 50%; border: 1px solid #ddd; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; font-size: 50px; color: white; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.1); background-size: cover; background-position: center; }
+        .welcome-msg { font-size: 22px; color: #202124; margin-bottom: 8px; font-weight: bold; }
+        .welcome-sub { font-size: 14px; color: #5f6368; margin-bottom: 30px; text-align: center; }
+        .setup-input { font-size: 18px; border: 1px solid #dadce0; border-radius: 12px; outline: none; padding: 15px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        .input-hint { font-size: 12px; color: #70757a; align-self: flex-start; margin-bottom: 25px; margin-left: 5px; }
+        .setup-submit { background: var(--main-blue); color: white; padding: 12px 40px; border-radius: 25px; font-size: 16px; font-weight: bold; border: none; cursor: pointer; align-self: flex-end; }
+
+        /* 検索欄 */
+        .search-container { padding: 10px 15px; background: white; border-bottom: 1px solid #eee; }
+        .search-box { background: var(--search-bg); border-radius: 10px; padding: 8px 12px; display: flex; align-items: center; width: 100%; box-sizing: border-box; }
+        .search-input { background: transparent; border: none; outline: none; margin-left: 10px; font-size: 16px; width: 100%; color: #3c4043; }
+
+        /* 設定画面 */
+        .settings-section-title { padding: 20px 20px 10px; font-size: 14px; color: #5f6368; font-weight: bold; text-transform: uppercase; }
+        .profile-section-bg { background: var(--bg-gray); padding: 40px 20px; position: relative; overflow: hidden; display: flex; justify-content: center; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; }
+        .profile-card { background: white; width: 90%; max-width: 350px; padding: 30px 20px; border-radius: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; flex-direction: column; align-items: center; z-index: 1; overflow: hidden; }
+        .settings-avatar-large { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 60px; color: white; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 15px; background-size: cover; background-position: center; }
+        .avatar-edit-wrapper { position: relative; cursor: pointer; display: flex; flex-direction: column; align-items: center; }
+        .edit-badge { position: absolute; bottom: 30px; right: 0; background: white; border: 1px solid #ddd; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .size-hint { font-size: 11px; color: #70757a; margin-top: -10px; margin-bottom: 15px; }
+        .user-id-display { font-size: 14px; color: #5f6368; margin-bottom: 10px; background: #f8f9fa; padding: 4px 12px; border-radius: 20px; border: 1px solid #eee; }
+        .name-edit-row { display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; width: 100%; max-width: 280px; }
+        .settings-user-name-large { font-size: 28px; font-weight: bold; color: #202124; border: none; background: transparent; outline: none; text-align: center; width: 100%; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .settings-user-name-large.editing { border-bottom: 3px solid var(--main-blue); color: var(--main-blue); }
+        .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; font-size: 18px; border-bottom: 1px solid #eee; background: white; }
+        .toggle-switch { width: 60px; height: 32px; background: #ccc; border-radius: 16px; position: relative; cursor: pointer; border: 2px solid #888; }
+        .toggle-switch.on { background: white; }
+        .toggle-switch::after { content: ""; position: absolute; width: 24px; height: 24px; background: #888; border-radius: 50%; top: 4px; left: 4px; transition: 0.3s; }
+        .toggle-switch.on::after { left: 32px; background: var(--active-green); }
+        .delete-btn { color: var(--danger-red); font-weight: bold; cursor: pointer; padding: 25px 20px; font-size: 18px; border-top: 1px solid #eee; background: white; }
+
+        /* トーク詳細画面 */
+        #chat-room {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: var(--chat-bg); z-index: 100; display: none; flex-direction: column;
+        }
+        #chat-room .header { background: var(--header-blue); border-bottom: none; }
+        #chat-room .header-title { border: none; font-size: 26px; }
+
+        .chat-messages { flex: 1; overflow-y: auto; padding: 20px 15px; display: flex; flex-direction: column; gap: 20px; position: relative; }
+        
+        .msg-row-bot { display: flex; align-items: flex-start; gap: 10px; }
+        .msg-content-bot { display: flex; flex-direction: column; }
+        .msg-name { font-size: 12px; color: #555; margin-bottom: 4px; }
+        .message.bot { 
+            align-self: flex-start; background: white; border-radius: 15px; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1); padding: 10px 15px; position: relative;
+        }
+        .message.bot::before {
+            content: ""; position: absolute; top: 10px; left: -8px;
+            border-style: solid; border-width: 5px 10px 5px 0; border-color: transparent white transparent transparent;
+        }
+
+        .msg-row-me { align-self: flex-end; display: flex; align-items: flex-end; gap: 5px; flex-direction: column; max-width: 75%; }
+        .message.me { 
+            align-self: flex-end; background: var(--my-bubble); border-radius: 15px; 
+            padding: 10px 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); position: relative;
+            word-wrap: break-word; width: fit-content;
+        }
+        .message.me::after {
+            content: ""; position: absolute; top: 5px; right: -8px;
+            border-style: solid; border-width: 0 0 15px 15px; border-color: transparent transparent transparent var(--my-bubble);
+        }
+        .message-img { width: 100%; max-width: 250px; border-radius: 10px; display: block; margin-bottom: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+
+        /* リスタートボタン */
+        #restart-btn {
+            position: absolute; bottom: 80px; right: 15px;
+            background: rgba(0,0,0,0.7); color: white; border: 2px solid white;
+            padding: 12px 20px; border-radius: 30px; font-size: 16px; font-weight: bold;
+            cursor: pointer; z-index: 110; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        /* 画像プレビューエリア */
+        #image-preview-container {
+            display: none; background: #fff; padding: 10px; border-top: 1px solid #ccc;
+            position: relative; align-items: center; gap: 10px;
+        }
+        .preview-img-wrapper { position: relative; width: 60px; height: 60px; }
+        .preview-img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+        .remove-preview {
+            position: absolute; top: -8px; right: -8px; background: rgba(0,0,0,0.6);
+            color: white; border-radius: 50%; width: 20px; height: 20px;
+            display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;
+        }
+
+        .chat-input-area { background: white; padding: 8px; display: flex; gap: 10px; align-items: center; border-top: 1px solid #ccc; position: relative; }
+        .input-icon { width: 30px; height: 30px; fill: none; stroke: black; stroke-width: 1.5; cursor: pointer; }
+        .chat-input-container { flex: 1; background: #e8eaed; border-radius: 15px; border: 1px solid #999; padding: 5px 15px; display: flex; align-items: center; }
+        .chat-input { flex: 1; border: none; background: transparent; outline: none; font-size: 18px; color: #333; height: 30px; }
+        .chat-send-svg { width: 35px; height: 35px; fill: #4cb4f5; cursor: pointer; }
+
+        .nav-bar { width: 100%; height: 70px; background: #e0e0e0; display: flex; border-top: 1px solid #ccc; flex-shrink: 0; }
+        .nav-item { flex: 1; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .nav-item.active { background: #d0d0d0; }
+        .nav-icon { width: 42px; height: 42px; fill: none; stroke: black; stroke-width: 2; }
+        
+        #modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 3000; }
+        .modal-content { background: white; width: 80%; border-radius: 20px; padding: 25px; text-align: center; }
+
+        .custom-icon { width: 50px; height: 50px; border-radius: 50%; margin-right: 15px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); flex-shrink: 0; }
+        .memo-bg { background: linear-gradient(135deg, #40E0D0, #20B2AA); }
+        .bot-bg { background: linear-gradient(135deg, #7B68EE, #6A5ACD); }
+        .friend-bg { background: linear-gradient(135deg, #FFD700, #FFA500); }
+    </style>
+</head>
+<body>
+
+<div class="viewport">
+    <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="handleImage(event)">
+    <input type="file" id="chat-image-input" accept="image/*" style="display:none;" onchange="previewChatImage(event)">
+
+    <div id="onboarding-screen">
+        <div class="header"><div class="header-title">プロフィール設定</div><div></div></div>
+        <div class="setup-body">
+            <svg class="svg-deco" style="top:5%; left:5%; transform:rotate(-15deg);" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <svg class="svg-deco" style="top:20%; right:-5%; transform:rotate(10deg);" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            <svg class="svg-deco" style="bottom:20%; left:-10%; transform:rotate(-20deg);" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <svg class="svg-deco" style="bottom:10%; right:10%; transform:rotate(15deg);" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            
+            <div class="setup-card">
+                <div id="setup-avatar-preview" class="setup-avatar" onclick="document.getElementById('avatar-input').click()"></div>
+                <div class="welcome-msg">こんにちは！</div>
+                <div class="welcome-sub">あなたにぴったりのアイコンを作りました。<br>お名前を入力して始めましょう。</div>
+                <input type="text" id="user-name-input" class="setup-input" placeholder="あなたの名前" maxlength="7">
+                <div class="input-hint">※7文字以内で入力してください</div>
+                <button class="setup-submit" onclick="saveProfile()">はじめる</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-room">
+        <div class="header">
+            <div onclick="closeChat()" style="cursor:pointer; font-size:35px; padding:0 10px; font-weight:lighter;">＜</div>
+            <div class="header-title" id="chat-title">メモくん</div>
+            <svg class="input-icon" style="stroke:white; fill:white; width:30px; height:30px;" viewBox="0 0 24 24"><path d="M6.62 10.79a15.053 15.053 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <button id="restart-btn" onclick="restartShiritori()">リスタート</button>
+        
+        <div id="image-preview-container">
+            <div class="preview-img-wrapper">
+                <img id="image-preview-element" class="preview-img" src="">
+                <div class="remove-preview" onclick="cancelImagePreview()">×</div>
+            </div>
+            <div style="font-size: 12px; color: #666;">画像を選択中...</div>
+        </div>
+
+        <div class="chat-input-area">
+            <svg class="input-icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg class="input-icon" viewBox="0 0 24 24" onclick="document.getElementById('chat-image-input').click()"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <div class="chat-input-container">
+                <input type="text" id="message-input" class="chat-input" placeholder="メッセージ" onkeydown="if(event.key==='Enter')sendMessage()">
+            </div>
+            <svg class="chat-send-svg" viewBox="0 0 24 24" onclick="sendMessage()"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </div>
+    </div>
+
+    <div class="page-container" id="main-container">
+        <div id="home" class="page">
+            <div class="header">
+                <div class="header-title">ホーム</div>
+                <div class="header-icons">
+                    <div id="notif-bell" onclick="openNotifModal()" style="position:relative; cursor:pointer;">
+                        <svg style="stroke:white; fill:none; width:28px; height:28px;" viewBox="0 0 24 24" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <div id="notif-badge" style="display:none; position:absolute; top:0; right:0; background:red; border-radius:50%; width:10px; height:10px; border:2px solid black;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="search-container"><div class="search-box"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" class="search-input" placeholder="友達を検索" oninput="filterList(this.value, 'home-list')"></div></div>
+            <div style="text-align: center; padding: 20px 0;">
+                <div id="home-avatar" style="width:120px; height:120px; border-radius:50%; border:1px solid #ccc; margin: 0 auto; display:flex; align-items:center; justify-content:center; font-size:60px; color:white; font-weight:bold; background-size: cover; background-position: center;"></div>
+                <div id="display-user-name" style="font-size: 32px; margin-top: 10px; border-bottom: 2px solid black; display: inline-block; min-width: 150px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px 15px; border-bottom: 1px solid #ccc;">
+                <span style="font-size: 16px; font-weight: bold;">友だちリスト</span>
+                <span style="font-size: 16px; font-weight: bold; border: 2.5px solid black; border-radius: 8px; padding: 4px 12px; cursor: pointer;" onclick="addNewFriend()">友だちを追加＋</span>
+            </div>
+            <div id="home-list"></div>
+        </div>
+
+        <div id="talk-list" class="page">
+            <div class="header"><div class="header-title">トーク</div><div class="header-plus">＋</div></div>
+            <div class="search-container"><div class="search-box"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" class="search-input" placeholder="友達・グループを検索" oninput="filterList(this.value, 'talk-list-content')"></div></div>
+            <div id="talk-list-content"></div>
+        </div>
+
+        <div id="settings" class="page">
+            <div class="header"><div class="header-title">設定</div></div>
+            <div class="settings-section-title">プロフィール設定</div>
+            <div class="profile-section-bg">
+                <svg class="svg-deco" style="top:5%; left:5%; transform:rotate(-15deg);" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                <div class="profile-card">
+                    <div class="avatar-edit-wrapper" onclick="document.getElementById('avatar-input').click()">
+                        <div id="settings-avatar" class="settings-avatar-large"></div>
+                        <div class="edit-badge"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+                        <div class="size-hint">400px × 400px 推奨</div>
+                    </div>
+                    <div id="my-id-display" class="user-id-display">ID: 加筆中...</div>
+                    <div class="name-edit-row" onclick="startNameEdit()">
+                        <input type="text" id="settings-user-name" class="settings-user-name-large" readonly maxlength="7" onblur="finishNameEdit()" onkeydown="if(event.key==='Enter')this.blur()">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.5" style="flex-shrink:0;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-section-title">アプリ設定</div>
+            <div class="settings-row"><span>通知を許可</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>
+            <div class="settings-row"><span>通知を表示</span><div class="toggle-switch on" onclick="this.classList.toggle('on')"></div></div>
+            <div class="delete-btn" onclick="openModal()">データの削除</div>
+        </div>
+    </div>
+
+    <div class="nav-bar">
+        <div class="nav-item active" onclick="movePage(0, this)"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10z"/><rect x="10" y="14" width="4" height="7"/></svg></div>
+        <div class="nav-item" onclick="movePage(1, this)"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="8" cy="10" r="0.8" fill="black"/><circle cx="12" cy="10" r="0.8" fill="black"/><circle cx="16" cy="10" r="0.8" fill="black"/></svg></div>
+        <div class="nav-item" onclick="movePage(2, this)"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z"/><circle cx="12" cy="12" r="3" stroke="black" fill="none"/></svg></div>
+    </div>
+</div>
+<div id="friend-request-modal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; z-index:3000;">
+        <div style="background:white; width:85%; max-width:350px; border-radius:20px; padding:20px; text-align:center;">
+            <h3 id="modal-type-title" style="margin-top:0;">友だちを追加</h3>
+            <div id="request-input-area">
+                <p style="font-size:14px; color:#666;">相手のIDを入力して申請を送ります。</p>
+                <input type="text" id="target-id-input" class="setup-input" placeholder="相手のIDを入力" style="width:100%; padding:12px; box-sizing:border-box; border:1px solid #ddd; border-radius:10px; margin-bottom:20px; font-size:16px;">
+                <button style="width:100%; padding:12px; border:none; background:var(--main-blue); color:white; border-radius:10px; font-weight:bold;" onclick="sendFriendRequest()">申請を送る</button>
+            </div>
+            <div id="notif-list-area" style="display:none; max-height:300px; overflow-y:auto; margin-bottom:15px;">
+                </div>
+            <button style="width:100%; margin-top:10px; padding:10px; border:none; background:#eee; border-radius:10px;" onclick="closeAllModals()">閉じる</button>
+        </div>
+    </div>
+
+<div id="modal-overlay"><div class="modal-content"><div style="font-size:18px; font-weight:bold; margin-bottom:25px;">本当に削除しますか？</div><div style="display:flex; gap:10px;"><button style="flex:1; padding:12px; border:none; background:#eee;" onclick="closeModal()">いいえ</button><button style="flex:1; padding:12px; border:none; background:var(--danger-red); color:white;" onclick="executeDelete()">はい</button></div></div></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+
+<script>
+  // あなた専用のFirebase設定
+  const firebaseConfig = {
+    apiKey: "AIzaSyAZ7kfq0Yf489FpSkQgfcEiC6I4Wgn0zJ8",
+    authDomain: "itoko-chat.firebaseapp.com",
+    databaseURL: "https://itoko-chat-default-rtdb.firebaseio.com/",
+    projectId: "itoko-chat",
+    storageBucket: "itoko-chat.firebasestorage.app",
+    messagingSenderId: "24625705141",
+    appId: "1:24625705141:web:58027ecf0a353c507b4efc",
+    measurementId: "G-5T42QLW5KZ"
+  };
+
+  // Firebaseを初期化して使えるようにする
+  firebase.initializeApp(firebaseConfig);
+  const database = firebase.database(); // これでオンライン通信の準備完了！
+</script>
+
+<script>
+    let friends = JSON.parse(localStorage.getItem('friends-list')) || [
+        { id: "memo", name: "メモくん", msg: "何も送られていません", type: "memo" }, 
+        { id: "bot", name: "しりとりロボット（開発中）", msg: "何も送られていません", type: "bot" }
+    ];
+    const colors = ["#FF5733", "#33FF57", "#3357FF", "#F333FF", "#FF33A8", "#33FFF3", "#F3FF33"];
+    let currentIcon = { char: "", color: "", image: null };
+    let chatMemos = JSON.parse(localStorage.getItem('chat-memos')) || [];
+    let shiritoriHistory = JSON.parse(localStorage.getItem('shiritori-history')) || [];
+    let isGameOver = localStorage.getItem('is-game-over') === 'true';
+    let selectedChatId = "memo";
+    let selectedChatImage = null;
+    let shiritoriCurrentStartChar = "り"; 
+
+    const dictionary = ["りんご", "ごりら", "らっぱ", "ぱんだ", "だるま", "まつり", "りす", "すいか", "かもめ", "めだか", "からす", "すずめ", "めがね", "ねこ", "こま", "まり", "りぼん", "こあら", "らくば", "ばなな", "なす", "すな", "ないふ", "ふね", "ねじ", "じか", "かメ", "めろん", "とうふ", "ふじさん", "しんぶん", "とまと", "とけい", "いちご", "ごはん", "しお", "しょうゆ", "しりとり", "りす", "とうもろこし", "しか"];
+
+    const memoSvg = `<div class="custom-icon memo-bg"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>`;
+    const botSvg = `<div class="custom-icon bot-bg"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/><path d="M9 11V9a3 3 0 0 1 6 0v2"/></svg></div>`;
+    const friendSvg = `<div class="custom-icon friend-bg"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`;
+
+   function initApp() {
+        const savedName = localStorage.getItem('chat-user-name');
+        const savedIcon = JSON.parse(localStorage.getItem('chat-user-icon'));
+        let savedID = localStorage.getItem('chat-user-id');
+
+        if (!savedID || isNaN(savedID) || savedID.includes('-')) {
+            savedID = Math.floor(Math.random() * 1000000).toString(); // ID生成
+            localStorage.setItem('chat-user-id', savedID);
+        }
+        document.getElementById('my-id-display').innerText = `ID: ${savedID}`;
+
+        if (!savedName) {
+            const colors = ["#4a9ede", "#e91e63", "#4caf50", "#ff9800", "#9c27b0"];
+            currentIcon = { char: "い", color: colors[0], image: null };
+            updateAvatarDisplay(document.getElementById('setup-avatar-preview'), currentIcon);
+            document.getElementById('onboarding-screen').style.display = 'flex';
+        } else {
+            currentIcon = savedIcon; 
+            updateUI(savedName); 
+            
+            // --- ここから下が重要！ ---
+            listenToMessages(); // メッセージを監視
+            listenToRequests(); // ★申請（ベルマーク）を監視
+            listenToFriends();  // ★友だちリストを監視
+            renderList(friends);
+            // メモくんとしりとりボットを強制的に追加（復活）させる
+    const myID = localStorage.getItem('chat-user-id');
+    database.ref('users/' + myID + '/friends/memo').set({
+        id: "memo", name: "メモくん", msg: "自分専用のメモ帳です", type: "memo"
+    });
+    database.ref('users/' + myID + '/friends/bot').set({
+        id: "bot", name: "しりとりボット(開発中)", msg: "しりとりしよう！", type: "bot"
+    });
+        }
+    }
+
+   // 友だち追加ボタン（＋）を押したときの動き
+    function addNewFriend() {
+        document.getElementById('modal-type-title').innerText = "友だちを追加";
+        document.getElementById('request-input-area').style.display = "block";
+        document.getElementById('notif-list-area').style.display = "none";
+        document.getElementById('friend-request-modal').style.display = "flex";
+    }
+
+    // ベルマークを押したときの動き
+    function openNotifModal() {
+        document.getElementById('modal-type-title').innerText = "届いた申請";
+        document.getElementById('request-input-area').style.display = "none";
+        document.getElementById('notif-list-area').style.display = "block";
+        document.getElementById('friend-request-modal').style.display = "flex";
+    }
+
+    // モーダルを閉じる
+    function closeAllModals() {
+        document.getElementById('friend-request-modal').style.display = "none";
+    }
+
+    // 申請を Firebase に送る命令
+    function sendFriendRequest() {
+        const targetID = document.getElementById('target-id-input').value.trim();
+        const myID = localStorage.getItem('chat-user-id');
+        const myName = localStorage.getItem('chat-user-name');
+
+        if (!targetID) return alert("IDを入力してね");
+        if (targetID === myID) return alert("自分には送れません");
+
+        database.ref('requests/' + targetID + '/' + myID).set({
+            fromID: myID,
+            fromName: myName,
+            status: 'pending',
+            time: firebase.database.ServerValue.TIMESTAMP
+        }).then(() => {
+            alert("申請を送りました！");
+            document.getElementById('target-id-input').value = ""; 
+            closeAllModals();
+        });
+    }
+    function openChat(id) {
+        selectedChatId = id;
+        const room = document.getElementById('chat-room');
+        const title = document.getElementById('chat-title');
+        const restartBtn = document.getElementById('restart-btn');
+        const friend = friends.find(f => f.id === id);
+        room.style.display = 'flex';
+        
+        if (id === 'memo') {
+            title.innerText = "メモくん";
+            restartBtn.style.display = "none";
+            renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
+        } else if (id === 'bot') {
+            title.innerText = "しりとりロボット（開発中）";
+            restartBtn.style.display = "block";
+            if (shiritoriHistory.length === 0) {
+                const startOptions = ["し", "り", "と", "り"];
+                shiritoriCurrentStartChar = startOptions[Math.floor(Math.random() * startOptions.length)];
+            }
+            renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+        } else {
+            title.innerText = friend.name;
+            restartBtn.style.display = "none";
+            let history = JSON.parse(localStorage.getItem(`history-${id}`)) || [];
+            renderMessages(history, friend.name, friendSvg, "トークを開始しましょう。");
+        }
+    }
+
+    function closeChat() { 
+        document.getElementById('chat-room').style.display = 'none'; 
+        cancelImagePreview();
+    }
+
+    function restartShiritori() {
+        if (selectedChatId === 'bot') {
+            isGameOver = false;
+            localStorage.setItem('is-game-over', 'false');
+            shiritoriHistory = [];
+            const startOptions = ["し", "り", "と", "り"];
+            shiritoriCurrentStartChar = startOptions[Math.floor(Math.random() * startOptions.length)];
+            localStorage.setItem('shiritori-history', JSON.stringify(shiritoriHistory));
+            renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+            const botFriend = friends.find(f => f.id === 'bot');
+            botFriend.msg = "リスタートしました";
+            renderList(friends);
+        }
+    }
+
+   function renderMessages(history, botName, botIcon, welcomeMsg) {
+        const container = document.getElementById('chat-messages');
+        let html = `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${welcomeMsg}</div></div></div>`;
+        
+        // 履歴をループして表示
+        history.forEach(m => {
+            // Firebaseから来たデータ(sender)か、古い形式(role)かチェック
+            if (m.role === 'bot') {
+                html += `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${m.text}</div></div></div>`;
+            } else {
+                const myID = localStorage.getItem('chat-user-id');
+                // senderが自分じゃない（相手）場合は左側、自分なら右側
+                let isMe = (m.sender === myID || m.role === 'me' || !m.sender);
+                
+                if (isMe) {
+                    let imgPart = m.image ? `<img src="${m.image}" class="message-img">` : "";
+                    let textPart = m.text ? `<div class="message me">${m.text}</div>` : "";
+                    html += `<div class="msg-row-me">${imgPart}${textPart}</div>`;
+                } else {
+                    html += `<div class="msg-row-bot">${botIcon}<div class="msg-content-bot"><div class="msg-name">${botName}</div><div class="message bot">${m.text}</div></div></div>`;
+                }
+            }
+        });
+        container.innerHTML = html;
+        container.scrollTop = container.scrollHeight;
+    }
+
+   function sendMessage() {
+    const input = document.getElementById('message-input');
+    const text = input.value.trim();
+    const myID = localStorage.getItem('chat-user-id'); // 自分の数字ID
+
+    if (!text && !selectedChatImage) return;
+
+    // --- ここからFirebaseへの送信処理 ---
+    if (selectedChatId === 'memo') {
+        // メモくん（自分専用）の場合も、オンラインに保存しておくと便利です
+        database.ref('memos/' + myID).push({
+            text: text,
+            image: selectedChatImage,
+            time: Date.now()
+        });
+    } else if (selectedChatId === 'bot') {
+        // しりとりロボットは今のところ自分のスマホだけで動かすのでそのまま
+        handleShiritori(text);
+    } else {
+        // 【重要】友だち（オンライン相手）への送信
+        // 相手のIDと自分のIDを組み合わせて「二人のチャットルーム」をネット上に作ります
+        const chatID = [myID, selectedChatId].sort().join('_'); 
+        database.ref('chats/' + chatID).push({
+            sender: myID,
+            text: text,
+            image: selectedChatImage,
+            time: firebase.database.ServerValue.TIMESTAMP
+        });
+    }
+    // --- 送信処理ここまで ---
+
+    input.value = "";
+    cancelImagePreview();
+}
+
+    function handleShiritori(text) {
+        if (!text) return;
+        shiritoriHistory.push({ role: 'me', text: text });
+        renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+        setTimeout(() => {
+            let botReply = "";
+            if (isGameOver) {
+                botReply = "リスタートボタンを押してもう一戦！";
+            } else {
+                const lastChar = text.slice(-1);
+                const firstChar = text.slice(0, 1);
+                let currentTarget = shiritoriCurrentStartChar;
+                if (shiritoriHistory.length > 1) {
+                     const botMessages = shiritoriHistory.filter(m => m.role === 'bot');
+                     if (botMessages.length > 0) currentTarget = botMessages[botMessages.length - 1].text.slice(-1);
+                }
+                if (firstChar !== currentTarget) {
+                    botReply = `違うよ！今は「${currentTarget}」から始まる言葉を送ってね。`;
+                } else if (lastChar === "ん") {
+                    botReply = "あ！「ん」がついたよ。僕の勝ちだね！リスタートしてまた遊ぼう！";
+                    isGameOver = true;
+                } else {
+                    const candidates = dictionary.filter(w => w.startsWith(lastChar));
+                    if (candidates.length > 0) {
+                        botReply = candidates[Math.floor(Math.random() * candidates.length)];
+                        if (botReply.endsWith("ん")) { botReply += " …あ！「ん」がついちゃった。僕の負け！"; isGameOver = true; }
+                    } else {
+                        botReply = "うーん、思いつかないや。僕の負け！リスタートしてね。";
+                        isGameOver = true;
+                    }
+                }
+            }
+            if (isGameOver) localStorage.setItem('is-game-over', 'true');
+            shiritoriHistory.push({ role: 'bot', text: botReply });
+            saveAndSync('shiritori-history', shiritoriHistory, botReply, 'bot');
+        }, 1200); 
+    }
+
+    function saveAndSync(key, data, lastMsg, friendId) {
+        localStorage.setItem(key, JSON.stringify(data));
+        const friend = friends.find(f => f.id === friendId);
+        friend.msg = lastMsg;
+        renderList(friends);
+        if (selectedChatId === friendId) {
+            if (friendId === 'memo') renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
+            else renderMessages(shiritoriHistory, "しりとりロボット（開発中）", botSvg, `しりとりしよう！「${shiritoriCurrentStartChar}」から始まる言葉を送ってね！`);
+        }
+    }
+
+    function previewChatImage(event) {
+        const file = event.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            selectedChatImage = e.target.result;
+            document.getElementById('image-preview-element').src = selectedChatImage;
+            document.getElementById('image-preview-container').style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function cancelImagePreview() { selectedChatImage = null; document.getElementById('image-preview-container').style.display = 'none'; }
+    
+    function handleImage(event) {
+        const file = event.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            currentIcon.image = e.target.result;
+            updateUI(localStorage.getItem('chat-user-name') || "");
+            if(localStorage.getItem('chat-user-name')) localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function updateAvatarDisplay(element, icon) {
+        if (!element) return;
+        if (icon.image) { element.style.backgroundImage = `url(${icon.image})`; element.innerText = ""; } 
+        else { element.style.backgroundImage = "none"; element.innerText = icon.char; element.style.backgroundColor = icon.color; }
+    }
+
+    function saveProfile() {
+        const nameInput = document.getElementById('user-name-input').value;
+        if (nameInput.trim() === "") return;
+        localStorage.setItem('chat-user-name', nameInput);
+        localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
+        updateUI(nameInput);
+        document.getElementById('onboarding-screen').style.display = 'none';
+        renderList(friends);
+    }
+
+    function updateUI(userName) {
+        document.getElementById('display-user-name').innerText = userName;
+        document.getElementById('settings-user-name').value = userName;
+        updateAvatarDisplay(document.getElementById('home-avatar'), currentIcon);
+        updateAvatarDisplay(document.getElementById('settings-avatar'), currentIcon);
+        updateAvatarDisplay(document.getElementById('setup-avatar-preview'), currentIcon);
+    }
+
+ function renderList(list) {
+        // --- ここから追加：並び替えの処理 ---
+        const sortedList = [...list].sort((a, b) => {
+            // memo を一番上に、bot を二番目にする
+            if (a.id === 'memo') return -1;
+            if (b.id === 'memo') return 1;
+            if (a.id === 'bot') return -1;
+            if (b.id === 'bot') return 1;
+            return 0;
+        });
+        // --- ここまで ---
+
+        let html = "";
+        sortedList.forEach(f => { // ここを list ではなく sortedList に変える
+            let iconHtml = "";
+            if (f.type === "memo") iconHtml = memoSvg;
+            else if (f.type === "bot") iconHtml = botSvg;
+            else if (f.icon && f.icon.image) {
+                iconHtml = `<div class="custom-icon" style="background-image:url(${f.icon.image}); background-size:cover; background-position:center;"></div>`;
+            } else if (f.icon) {
+                iconHtml = `<div class="custom-icon" style="background-color:${f.icon.color}; color:white; font-weight:bold; font-size:20px; display:flex; align-items:center; justify-content:center;">${f.icon.char}</div>`;
+            } else {
+                iconHtml = friendSvg;
+            }
+            
+            html += `
+                <div onclick="openChat('${f.id}')" style="display:flex; align-items:center; padding:12px 15px; border-bottom:1px solid #f0f0f0; cursor:pointer;">
+                    ${iconHtml}
+                    <div style="overflow:hidden;">
+                        <div style="font-weight:bold; font-size:16px;">${f.name}</div>
+                        <div style="font-size:13px; color:#5f6368; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:200px;">${f.msg}</div>
+                    </div>
+                </div>`;
+        });
+        document.getElementById('home-list').innerHTML = html;
+        document.getElementById('talk-list-content').innerHTML = html;
+    }
+
+    function filterList(query, targetId) {
+        const filtered = friends.filter(f => f.name.includes(query) || f.msg.includes(query));
+        renderList(filtered);
+    }
+
+    function movePage(index, el) {
+        document.getElementById('main-container').style.transform = `translateX(-${index * 100}vw)`;
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function startNameEdit() { const input = document.getElementById('settings-user-name'); input.readOnly = false; input.classList.add('editing'); input.focus(); }
+    function finishNameEdit() { const input = document.getElementById('settings-user-name'); input.readOnly = true; input.classList.remove('editing'); localStorage.setItem('chat-user-name', input.value); updateUI(input.value); }
+    function openModal() { document.getElementById('modal-overlay').style.display = 'flex'; }
+    function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+    function executeDelete() { localStorage.clear(); location.reload(); }
+
+// --- ここから追加：Firebaseからメッセージをリアルタイムで受け取る ---
+
+function listenToMessages() {
+    const myID = localStorage.getItem('chat-user-id');
+
+    // 1. メモくんのデータを監視
+    database.ref('memos/' + myID).on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            // Firebaseにあるデータを、アプリで使える形式（配列）に変換
+            chatMemos = Object.values(data);
+            // もし今「メモくん」のチャットを開いていたら、画面を更新
+            if (selectedChatId === 'memo') {
+                renderMessages(chatMemos, "メモくん", memoSvg, "自由にメモしてね");
+            }
+        }
+    });
+
+    // 2. 友だちとのチャットを監視（後で使います）
+    // ※今回はまずメモくんで動くか確認しましょう
+}
+
+// アプリ起動時に「監視」を開始するようにする
+listenToMessages();
+
+// --- 追加ここまで ---    
+// --- 届いた申請をリアルタイムで監視して、ベルマークを光らせる ---
+function listenToRequests() {
+    const myID = localStorage.getItem('chat-user-id');
+    
+    database.ref('requests/' + myID).on('value', (snapshot) => {
+        const requests = snapshot.val();
+        const badge = document.getElementById('notif-badge');
+        const listArea = document.getElementById('notif-list-area');
+        
+        if (requests) {
+            // 申請があったら赤い点をつける
+            badge.style.display = 'block';
+            
+            // リストの中身を作る
+            let html = "";
+            Object.keys(requests).forEach(senderID => {
+                const req = requests[senderID];
+                html += `
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px; border-bottom:1px solid #eee;">
+                        <div style="text-align:left;">
+                            <div style="font-weight:bold;">${req.fromName}</div>
+                            <div style="font-size:12px; color:#666;">ID: ${req.fromID}</div>
+                        </div>
+                        <button onclick="acceptFriend('${req.fromID}', '${req.fromName}')" style="background:var(--main-blue); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold;">許可</button>
+                    </div>`;
+            });
+            listArea.innerHTML = html;
+        } else {
+            // 申請がないとき
+            badge.style.display = 'none';
+            listArea.innerHTML = '<p style="color:#999; padding:20px;">申請はありません</p>';
+        }
+    });
+}
+
+// --- 許可ボタンを押したときの処理 ---
+function acceptFriend(id, name) {
+    // 1. 友だちリストに追加（まだいない場合のみ）
+    if (!friends.find(f => f.id === id)) {
+        friends.push({
+            id: id,
+            name: name,
+            msg: "友だちになりました！",
+            type: "friend"
+        });
+        localStorage.setItem('friends-list', JSON.stringify(friends));
+        renderList(friends);
+    }
+    
+    // 2. Firebaseから申請データを消す
+    const myID = localStorage.getItem('chat-user-id');
+    database.ref('requests/' + myID + '/' + id).remove();
+    
+    alert(name + "さんと友だちになりました！");
+    closeAllModals();
+}
+
+// --- 最初から監視をスタートさせるために initApp を少し修正 ---
+// もともとの initApp() の一番最後に listenToRequests(); を書き足してください
+// --- 友だちリストをFirebaseと同期して、アイコンも正しく表示する ---
+function listenToFriends() {
+    const myID = localStorage.getItem('chat-user-id');
+    
+    // 自分の「friends」フォルダを監視
+    database.ref('users/' + myID + '/friends').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            // Firebaseのデータで友だちリストを更新
+            friends = Object.values(data);
+            localStorage.setItem('friends-list', JSON.stringify(friends));
+            renderList(friends);
+        }
+    });
+}
+
+// --- 修正版：許可ボタンを押したときの処理 ---
+function acceptFriend(id, name) {
+        const myID = localStorage.getItem('chat-user-id');
+        const myName = localStorage.getItem('chat-user-name');
+        const myIcon = JSON.parse(localStorage.getItem('chat-user-icon'));
+
+        database.ref('users/' + id + '/profile').once('value', (snap) => {
+            const targetProfile = snap.val();
+            const targetIcon = targetProfile ? targetProfile.icon : { char: name[0], color: "#999" };
+
+            // --- ここが重要！ ---
+            // .set ではなく、相手のIDの場所に直接書き込むことで「上書き」を防ぎます
+            
+            // 自分の友達リストに相手を追加
+            database.ref('users/' + myID + '/friends/' + id).update({
+                id: id, name: name, msg: "友だちになりました！", type: "friend", icon: targetIcon
+            });
+
+            // 相手の友達リストに自分を追加
+            database.ref('users/' + id + '/friends/' + myID).update({
+                id: myID, name: myName, msg: "友だちになりました！", type: "friend", icon: myIcon
+            });
+
+            // 申請を消す
+            database.ref('requests/' + myID + '/' + id).remove();
+            
+            alert(name + "さんと友だちになりました！");
+            closeAllModals();
+        });
+    }
+// --- 修正版：プロフィール保存時にFirebaseにも保存する ---
+function saveProfile() {
+        const name = document.getElementById('user-name-input').value;
+        if (!name) return;
+        const myID = localStorage.getItem('chat-user-id');
+        
+        localStorage.setItem('chat-user-name', name);
+        localStorage.setItem('chat-user-icon', JSON.stringify(currentIcon));
+        
+        // Firebaseに自分のプロフィールを保存
+        database.ref('users/' + myID + '/profile').set({
+            name: name,
+            icon: currentIcon
+        });
+
+        updateUI(name);
+        document.getElementById('onboarding-screen').style.display = 'none';
+        listenToMessages();
+        listenToFriends(); 
+        renderList(friends);
+    }
+initApp();
+</script>
+</body>
+</html>
